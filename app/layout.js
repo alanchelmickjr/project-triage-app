@@ -1,14 +1,19 @@
 import './globals.css'
+import { Providers } from './providers'
 
 export const metadata = {
   title: 'Project Triage 🐴',
-  description: 'Wrangle wild horses. Pick 3 to ride. Park the rest.',
+  description: 'Wrangle your wild horses. Pick 3 to ride. Stable the rest.',
 }
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Providers>
+          {children}
+        </Providers>
+      </body>
     </html>
   )
 }
