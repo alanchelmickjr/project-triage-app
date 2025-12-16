@@ -9,6 +9,8 @@ export default function ProjectTriage() {
   const [showScoring, setShowScoring] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const [energyData, setEnergyData] = useState(null)
+  const [showEnergyBanner, setShowEnergyBanner] = useState(true)
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -29,6 +31,22 @@ export default function ProjectTriage() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
     }
   }, [projects, loaded])
+
+  // Fetch energy data on mount and periodically
+  useEffect(() => {
+    const fetchEnergy = async () => {
+      try {
+        const res = await fetch('/api/tasks/energy')
+        const data = await res.json()
+        setEnergyData(data)
+      } catch (e) {
+        console.error('Failed to fetch energy data')
+      }
+    }
+    fetchEnergy()
+    const interval = setInterval(fetchEnergy, 60000) // Update every minute
+    return () => clearInterval(interval)
+  }, [])
 
   const calculateScore = (p) => {
     return ((p.impact * 2) + (p.excitement * 1.5) + (p.revenue * 1.5) + ((10 - p.effort) * 1)) / 6
@@ -74,13 +92,49 @@ export default function ProjectTriage() {
     const sorted = [...projects]
       .filter(p => p.name.trim())
       .sort((a, b) => calculateScore(b) - calculateScore(a))
-    
+
     const updated = sorted.map((p, i) => ({
       ...p,
       bucket: i < 3 ? 'focus' : i < 6 ? 'next' : 'parking'
     }))
-    
+
     setProjects(updated)
+  }
+
+  const energySort = async () => {
+    try {
+      const res = await fetch('/api/tasks/energy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks: projects, action: 'sort' })
+      })
+      const data = await res.json()
+      if (data.tasks) {
+        // Map back to original structure without extra energy fields
+        const updated = data.tasks.map(t => ({
+          id: t.id,
+          name: t.name,
+          description: t.description,
+          completion: t.completion,
+          impact: t.impact,
+          effort: t.effort,
+          revenue: t.revenue,
+          excitement: t.excitement,
+          bucket: t.bucket
+        }))
+        setProjects(updated)
+        setEnergyData(prev => ({
+          ...prev,
+          currentEnergy: data.currentEnergy,
+          energyLevel: data.energyLevel,
+          suggestion: data.suggestion
+        }))
+      }
+    } catch (e) {
+      console.error('Energy sort failed:', e)
+      // Fall back to regular sort
+      autoSort()
+    }
   }
 
   const exportData = () => {
@@ -126,8 +180,8 @@ export default function ProjectTriage() {
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold mb-2">🐴 Project Triage</h1>
-          <p className="text-slate-400 text-sm md:text-base">Wrangle wild horses. Pick 3 to ride. Park the rest.</p>
+          <h1 className="text-2xl md:text-3xl font-bold mb-2">TaskForge Triage</h1>
+          <p className="text-slate-400 text-sm md:text-base">Forge your focus. Energy-aware task management.</p>
         </div>
 
         {/* Bandwidth Meter */}
@@ -144,6 +198,52 @@ export default function ProjectTriage() {
           </div>
           <p className="text-xs text-slate-500 mt-2">Focus = 40% each | Next Up = 15% each | Parking = 0%</p>
         </div>
+
+        {/* Energy Suggestion Banner */}
+        {energyData && showEnergyBanner && (
+          <div className={`mb-6 p-4 rounded-lg border ${
+            energyData.energyLevel === 'peak'
+              ? 'bg-emerald-900/30 border-emerald-600'
+              : energyData.energyLevel === 'moderate'
+                ? 'bg-amber-900/30 border-amber-600'
+                : 'bg-blue-900/30 border-blue-600'
+          }`}>
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-3">
+                <div className={`text-2xl ${
+                  energyData.energyLevel === 'peak'
+                    ? 'animate-pulse'
+                    : ''
+                }`}>
+                  {energyData.energyLevel === 'peak' ? '⚡' : energyData.energyLevel === 'moderate' ? '🔋' : '🌙'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-semibold ${
+                      energyData.energyLevel === 'peak'
+                        ? 'text-emerald-400'
+                        : energyData.energyLevel === 'moderate'
+                          ? 'text-amber-400'
+                          : 'text-blue-400'
+                    }`}>
+                      {energyData.energyLevel === 'peak' ? 'Peak Energy' : energyData.energyLevel === 'moderate' ? 'Moderate Energy' : 'Low Energy'}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      ({Math.round(energyData.currentEnergy * 100)}%)
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-300 mt-1">{energyData.suggestion}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEnergyBanner(false)}
+                className="text-slate-500 hover:text-slate-300 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Add Project */}
         <div className="mb-6 flex flex-col sm:flex-row gap-2">
@@ -173,6 +273,13 @@ export default function ProjectTriage() {
               className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg font-medium transition"
             >
               ✨ Sort
+            </button>
+            <button
+              onClick={energySort}
+              className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 rounded-lg font-medium transition"
+              title="Sort tasks based on your current energy level"
+            >
+              ⚡ Energy
             </button>
           </div>
         </div>
@@ -319,7 +426,7 @@ export default function ProjectTriage() {
 
         {/* Credit */}
         <p className="text-center text-slate-600 text-xs mt-8">
-          Built for founders running at god speed 🐴
+          TaskForge Triage — Energy-aware productivity for focused founders
         </p>
       </div>
     </div>
